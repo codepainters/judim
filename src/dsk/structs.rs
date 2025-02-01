@@ -9,7 +9,7 @@ use binrw::binrw;
 
 #[binrw]
 #[brw(little)]
-#[br(magic = b"EXTENDED CPC DSK File\r\nDisk-Info\r\n")]
+#[brw(magic = b"EXTENDED CPC DSK File\r\nDisk-Info\r\n")]
 pub struct DskFileHeader {
     /// Name of the program that created the file, ASCII, zero-padded
     name_of_creator: [u8; 14],
@@ -21,6 +21,7 @@ pub struct DskFileHeader {
     /// Sizes of consecutive track info blocks in 256 bytes units.
     /// Note: I don't know how to convert [u8] to [u16] with binrw.
     #[br(count = num_cylinders * num_sides, align_after=256)]
+    #[bw(align_after = 256)]
     track_sizes: Vec<u8>,
 }
 
@@ -194,6 +195,13 @@ mod tests {
         assert_eq!(dsk_header.num_sides, 2);
         assert_eq!(dsk_header.track_sizes, vec![19; 2 * 80]);
 
-        // TODO: serialize back, compare
+        let mut output = Vec::new();
+        {
+            let mut writer = Cursor::new(&mut output);
+            dsk_header.write(&mut writer).unwrap();
+        }
+
+        assert_eq!(output.len(), 0x100);
+        assert_eq!(output, data);
     }
 }
