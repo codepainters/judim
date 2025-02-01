@@ -1,2 +1,3 @@
 
 mod image;
+mod structs;
