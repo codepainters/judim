@@ -18,7 +18,8 @@ pub struct DskFileHeader {
     /// Number fo the disk's sides
     num_sides: u8,
     _unused: [u8; 2],
-    /// Sizes of consecutive track info blocks (in 256 bytes unit).
+    /// Sizes of consecutive track info blocks in 256 bytes units.
+    /// Note: I don't know how to convert [u8] to [u16] with binrw.
     #[br(count = num_cylinders * num_sides, align_after=256)]
     track_sizes: Vec<u8>,
 }
@@ -26,7 +27,7 @@ pub struct DskFileHeader {
 #[derive(Debug)]
 #[binrw]
 #[brw(little)]
-#[br(magic = b"Track-Info\r\n")]
+#[brw(magic = b"Track-Info\r\n")]
 pub struct TrackInfo {
     /// Cylinder number, 0-based
     #[brw(pad_before = 4)]
@@ -50,6 +51,7 @@ pub struct TrackInfo {
 
     /// Metadata of actual sectors
     #[br(count = num_sectors, align_after=256)]
+    #[bw(align_after = 256)]
     sectors: Vec<SectorInfo>,
 }
 
@@ -95,7 +97,7 @@ mod tests {
     use std::io::{Read, Seek, SeekFrom};
     use std::path::PathBuf;
     use binrw::{io::Cursor, BinReaderExt, BinWrite};
-    use super::{SectorInfo, TrackInfo};
+    use super::{DskFileHeader, SectorInfo, TrackInfo};
 
     fn load_test_data(offset: u64, length: u64) -> std::io::Result<Vec<u8>> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/03.dsk");
@@ -144,10 +146,10 @@ mod tests {
     }
 
     #[test]
-    fn test_track_info_deserialization() {
+    fn test_track_info_serde() {
         let data = load_test_data(0x8600, 0x100)
-            .expect("Failed to open test file");
-        let mut reader = Cursor::new(data);
+            .expect("Failed to read test data");
+        let mut reader = Cursor::new(&data);
 
         let track_info: TrackInfo = reader.read_le().expect("Failed to read track info");
         assert_eq!(reader.position(), 0x100, "position after reading track info should be 0x100");
@@ -168,5 +170,30 @@ mod tests {
         assert_eq!(s.fdc_st2, 0);
         assert_eq!(s.actual_data_length, 512);
 
+        let mut output = Vec::new();
+        {
+            let mut writer = Cursor::new(&mut output);
+            track_info.write(&mut writer).unwrap();
+        }
+
+        assert_eq!(output.len(), 0x100);
+        assert_eq!(output, data);
+    }
+
+    #[test]
+    fn test_dsk_header_serde() {
+        let data = load_test_data(0, 0x100)
+            .expect("Failed to read test data");
+        let mut reader = Cursor::new(&data);
+
+        let dsk_header: DskFileHeader = reader.read_le().unwrap();
+        assert_eq!(reader.position(), 0x100, "position after reading track info should be 0x100");
+
+        assert_eq!(dsk_header.name_of_creator, *b"CPCDiskXP v2.5");
+        assert_eq!(dsk_header.num_cylinders, 80);
+        assert_eq!(dsk_header.num_sides, 2);
+        assert_eq!(dsk_header.track_sizes, vec![19; 2 * 80]);
+
+        // TODO: serialize back, compare
     }
 }
