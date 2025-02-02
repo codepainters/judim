@@ -12,17 +12,17 @@ use binrw::binrw;
 #[brw(magic = b"EXTENDED CPC DSK File\r\nDisk-Info\r\n")]
 pub struct DskFileHeader {
     /// Name of the program that created the file, ASCII, zero-padded
-    name_of_creator: [u8; 14],
+    pub name_of_creator: [u8; 14],
     /// Number fo the disk's cylinders
-    num_cylinders: u8,
+    pub num_cylinders: u8,
     /// Number fo the disk's sides
-    num_sides: u8,
+    pub num_sides: u8,
     _unused: [u8; 2],
     /// Sizes of consecutive track info blocks in 256 bytes units.
     /// Note: I don't know how to convert [u8] to [u16] with binrw.
     #[br(count = num_cylinders * num_sides, align_after=256)]
     #[bw(align_after = 256)]
-    track_sizes: Vec<u8>,
+    pub track_sizes: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -32,28 +32,28 @@ pub struct DskFileHeader {
 pub struct TrackInfo {
     /// Cylinder number, 0-based
     #[brw(pad_before = 4)]
-    cylinder_number: u8,
+    pub cylinder_number: u8,
     /// Side number, 0 or 1
-    side_number: u8,
+    pub side_number: u8,
 
     _unused1: [u8; 2],
 
     /// Size of the sector (stored as u8 with unit of 256 bytes)
     #[br(map = |x: u8| x as u16 * 256)]
     #[bw(map = |x| (x / 256) as u8)]
-    sector_size: u16,
+    pub sector_size: u16,
 
     /// Number of sectors on this particular track (tracks may vary)
-    num_sectors: u8,
+    pub num_sectors: u8,
     /// GAP#3 length, as defined in uPD765 datasheet
-    gap3_length: u8,
+    pub gap3_length: u8,
 
     _unused2: u8,
 
     /// Metadata of actual sectors
     #[br(count = num_sectors, align_after=256)]
     #[bw(align_after = 256)]
-    sectors: Vec<SectorInfo>,
+    pub sectors: Vec<SectorInfo>,
 }
 
 /// SectorInfo contains metadata for a single sector within a track.
@@ -89,16 +89,16 @@ pub struct SectorInfo {
     ///     is smaller than the requested sector. The sector still has sector_size bytes reserved
     ///     in the file, but any emulator should only return actual_data_length  bytes before
     ///     reporting an FDC error to the disk (Preferably the ones stored in fdc_st1/st2).
-    actual_data_length: u16
+    actual_data_length: u16,
 }
 
 #[cfg(test)]
 mod tests {
+    use super::{DskFileHeader, SectorInfo, TrackInfo};
+    use binrw::{io::Cursor, BinReaderExt, BinWrite};
     use std::fs::File;
     use std::io::{Read, Seek, SeekFrom};
     use std::path::PathBuf;
-    use binrw::{io::Cursor, BinReaderExt, BinWrite};
-    use super::{DskFileHeader, SectorInfo, TrackInfo};
 
     fn load_test_data(offset: u64, length: u64) -> std::io::Result<Vec<u8>> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/03.dsk");
@@ -148,12 +148,15 @@ mod tests {
 
     #[test]
     fn test_track_info_serde() {
-        let data = load_test_data(0x8600, 0x100)
-            .expect("Failed to read test data");
+        let data = load_test_data(0x8600, 0x100).expect("Failed to read test data");
         let mut reader = Cursor::new(&data);
 
         let track_info: TrackInfo = reader.read_le().expect("Failed to read track info");
-        assert_eq!(reader.position(), 0x100, "position after reading track info should be 0x100");
+        assert_eq!(
+            reader.position(),
+            0x100,
+            "position after reading track info should be 0x100"
+        );
 
         assert_eq!(track_info.cylinder_number, 3);
         assert_eq!(track_info.side_number, 1);
@@ -183,12 +186,15 @@ mod tests {
 
     #[test]
     fn test_dsk_header_serde() {
-        let data = load_test_data(0, 0x100)
-            .expect("Failed to read test data");
+        let data = load_test_data(0, 0x100).expect("Failed to read test data");
         let mut reader = Cursor::new(&data);
 
         let dsk_header: DskFileHeader = reader.read_le().unwrap();
-        assert_eq!(reader.position(), 0x100, "position after reading track info should be 0x100");
+        assert_eq!(
+            reader.position(),
+            0x100,
+            "position after reading track info should be 0x100"
+        );
 
         assert_eq!(dsk_header.name_of_creator, *b"CPCDiskXP v2.5");
         assert_eq!(dsk_header.num_cylinders, 80);
