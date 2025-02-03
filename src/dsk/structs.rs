@@ -62,21 +62,21 @@ pub struct TrackInfo {
 #[brw(little)]
 pub struct SectorInfo {
     /// Cylinder number, equivalent to C parameter in uPD765 commands
-    cylinder: u8,
+    pub cylinder: u8,
     /// Side number, equivalent to S parameter in uPD765 commands
-    side: u8,
+    pub side: u8,
     /// Sector ID, equivalent to R parameter in uPD765 commands
-    sector_id: u8,
+    pub sector_id: u8,
 
     /// Sector size, equivalent to N parameter in uPD765 commands
     #[br(map = |x: u8| x as u16 * 256)]
     #[bw(map = |x| (x / 256) as u8)]
-    sector_size: u16,
+    pub sector_size: u16,
 
     /// uPD765 Status Register 1 value
-    fdc_st1: u8,
+    pub fdc_st1: u8,
     /// uPD765 Status Register 2 value
-    fdc_st2: u8,
+    pub fdc_st2: u8,
 
     /// Actual length of the sector data.
     ///
@@ -89,7 +89,7 @@ pub struct SectorInfo {
     ///     is smaller than the requested sector. The sector still has sector_size bytes reserved
     ///     in the file, but any emulator should only return actual_data_length  bytes before
     ///     reporting an FDC error to the disk (Preferably the ones stored in fdc_st1/st2).
-    actual_data_length: u16,
+    pub actual_data_length: u16,
 }
 
 #[cfg(test)]
