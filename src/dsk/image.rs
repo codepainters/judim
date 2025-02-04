@@ -55,6 +55,14 @@ impl DskImage {
         Ok(())
     }
 
+    pub fn num_cylinders(&self) -> u8 {
+        self.header.num_cylinders
+    }
+
+    pub fn num_sides(&self) -> u8 {
+        self.header.num_sides
+    }
+
     fn ch_to_track_index(&self, cylinder: u8, head: u8) -> Result<usize> {
         if head >= self.header.num_sides {
             bail!("Invalid head (side) number: {}", head);
