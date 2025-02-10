@@ -1,11 +1,15 @@
 use anyhow::{bail, Result};
 use binrw::{binrw, BinReaderExt};
 use std::io::Cursor;
+use std::ops::{Range, Shl};
 
-// FIXME: this can be more encapsulated, handling of block list can be moved here.
-//   This way some invariants could be checked here.
+// TODO:
+//   - validate block list
+//   - implement saving back to slice
+//   - parse extra flags (get rid of binrw? use calc?)
+//   - encapsulate
 
-/// DirEntry structure represents a directory entry as stored
+/// CpmDirEntry structure represents a directory entry as stored
 /// in the CP/M filesystem directory.
 ///
 /// Note: depending on the size of the filesystem, DirEntry
@@ -21,12 +25,21 @@ pub struct CpmDirEntry {
     /// extension, 0x20-padded
     pub extension: [u8; 3],
     /// extent number, used for files spanning more than one dir entry
-    pub extent: u8,
-    _reserved: [u8; 2],
+    pub extent_l: u8,
+    _reserved: u8,
+    /// extent number, higher byte
+    pub extent_h: u8,
     /// file size expressed as number of 128-byte records
     pub record_count: u8,
     /// block numbers
     pub blocks: [u16; 8],
+}
+
+#[derive(Eq, PartialEq, Hash)]
+pub struct FileId {
+    user: u8,
+    name: [u8; 8],
+    extension: [u8; 3],
 }
 
 impl CpmDirEntry {
@@ -44,8 +57,12 @@ impl CpmDirEntry {
         Ok(d)
     }
 
-    pub fn size(&self) -> usize {
+    pub fn extent_size(&self) -> usize {
         self.record_count as usize * 128
+    }
+
+    pub fn extent_number(&self) -> u16 {
+        (self.extent_h as u16).shl(8) | self.extent_l as u16
     }
 
     pub fn file_name(&self) -> String {
@@ -53,8 +70,25 @@ impl CpmDirEntry {
         let extension = String::from_utf8_lossy(&self.extension);
         format!("{}.{}", name.trim_end(), extension.trim_end())
     }
+    //
+    // pub fn deleted(&self) -> bool {
+    //     self.user == 0xE5
+    // }
 
-    pub fn deleted(&self) -> bool {
-        self.user == 0xE5
+    pub fn used(&self) -> bool {
+        self.user != 0xE5
+    }
+
+    #[allow(unused)]
+    pub fn likely_deleted(&self, valid_block_range: Range<u16>) -> bool {
+        false
+    }
+
+    pub fn file_id(&self) -> FileId {
+        FileId {
+            user: self.user,
+            name: self.name,
+            extension: self.extension,
+        }
     }
 }

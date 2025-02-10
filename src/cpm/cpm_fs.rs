@@ -1,7 +1,8 @@
-use crate::cpm::dir_entry::CpmDirEntry;
+use crate::cpm::dir_entry::{CpmDirEntry, FileId};
 use crate::dsk::DskImage;
 use crate::dsk::CHS;
 use anyhow::{bail, Result};
+use std::collections::HashMap;
 use std::fs::File;
 
 /// CP/M filesystem parameters
@@ -17,6 +18,28 @@ pub struct Params {
     sectors_per_block: u8,
     /// number of blocks reserved for the file directory entries
     dir_blocks: u8,
+}
+
+pub enum ListFilesMode {
+    /// List all files (i.e. owned by all users), but not deleted files.
+    All,
+    /// List only files owned bya  given user.
+    OwnedBy(u8),
+    /// List all files, included deleted ones.
+    Deleted
+}
+
+/// Filesystem file list element.
+#[derive(Clone, Debug)]
+pub struct FileItem {
+    /// User owning the file, or None for deleted items
+    pub user: Option<u8>,
+    /// File name with extension
+    pub name: String,
+    /// Size of the file
+    pub size: usize,
+    /// list of the blocks (LBAs) occupied by the file
+    pub block_list: Vec<u16>,
 }
 
 pub struct CpmFs {
@@ -50,6 +73,43 @@ impl CpmFs {
         })
     }
 
+    pub fn list_files(&self, mode: ListFilesMode) -> Result<Vec<FileItem>> {
+        let mut file_entries: HashMap<FileId, Vec<&CpmDirEntry>> = HashMap::new();
+        let valid_block_range = self.params.dir_blocks as u16..self.num_blocks;
+
+        let condition = match mode {
+            ListFilesMode::All => |de: &CpmDirEntry|de.used(),
+            ListFilesMode::Deleted => |de: &CpmDirEntry| de.used() || de.likely_deleted(valid_block_range),
+            ListFilesMode::OwnedBy(num) => |de: &CpmDirEntry| de.user == num
+        };
+        let it = self.dir_entries.iter().filter(condition);
+
+        // group all the extends belonging to each file
+        for e in it {
+            file_entries.entry(e.file_id()).or_insert_with(Vec::new).push(e);
+        }
+
+        // TODO: use map() ?
+        let mut files: Vec<FileItem> = Vec::with_capacity(file_entries.len());
+        for (k, v) in file_entries.iter() {
+            let first = v[0];
+
+            let mut sorted_extents = v.clone();
+            sorted_extents.sort_unstable_by_key(|e| e.extent_number());
+            let block_list = sorted_extents.iter().map(|e| e.blocks).flatten().collect();
+
+            files.push(FileItem {
+                // TODO: push it to CpmDirEntry
+                user: if first.used() { Some(first.user) } else { None },
+                name: first.file_name(),
+                size: v.iter().map(|e| e.extent_size()).sum(),
+                block_list,
+            })
+        }
+
+        Ok(files)
+    }
+
     /// Converts a logical sector index to a CHS sector address.
     fn lsi_to_chs(params: &Params, sides: u8, lsi: u16) -> CHS {
         let track = lsi / params.sectors_per_track as u16 + params.reserved_tracks as u16;
@@ -71,18 +131,18 @@ impl CpmFs {
         for lsi in 0..num_sectors {
             let sector = disk.sector_as_slice(Self::lsi_to_chs(params, sides, lsi))?;
 
-            // TODO: use vec/map/collect here
-            for entry_bytes in sector.chunks(32) {
-                entries.push(CpmDirEntry::from_bytes(entry_bytes)?)
-            }
+            let sector_entries: Vec<CpmDirEntry> = sector
+                .chunks(32)
+                .map(|chunk| CpmDirEntry::from_bytes(chunk))
+                .collect::<Result<Vec<_>>>()?;
+            entries.extend(sector_entries);
         }
         Ok(entries)
     }
 
     fn calc_used_blocks(num_blocks: u16, dir_entries: &Vec<CpmDirEntry>) -> Result<Vec<bool>> {
         let mut used_blocks = vec![false; num_blocks as usize];
-        for e in dir_entries.iter().filter(|e| !e.deleted()) {
-            dbg!(e.file_name());
+        for e in dir_entries.iter().filter(|e| e.used()) {
             for b in e.blocks {
                 if b != 0 {
                     if used_blocks[b as usize] {
@@ -98,9 +158,10 @@ impl CpmFs {
 
 #[cfg(test)]
 mod tests {
+    use crate::cpm::cpm_fs::{CpmFs, Params};
     use std::fs::File;
     use std::path::PathBuf;
-    use crate::cpm::cpm_fs::{CpmFs, Params};
+    use crate::cpm::cpm_fs::ListFilesMode::All;
 
     #[test]
     fn test_load_save_dsk() {
@@ -115,5 +176,7 @@ mod tests {
             dir_blocks: 4,
         };
         let fs = CpmFs::load(&mut file, params).unwrap();
+        let files = fs.list_files(All).unwrap();
+        dbg!(&files);
     }
 }
