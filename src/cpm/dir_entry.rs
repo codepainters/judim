@@ -79,8 +79,12 @@ impl CpmDirEntry {
         self.user != 0xE5
     }
 
+    pub fn owner(&self) -> Option<u8> {
+        if self.used() { Some(self.user) } else { None }
+    }
+
     #[allow(unused)]
-    pub fn likely_deleted(&self, valid_block_range: Range<u16>) -> bool {
+    pub fn likely_deleted(&self, valid_block_range: &Range<u16>) -> bool {
         false
     }
 

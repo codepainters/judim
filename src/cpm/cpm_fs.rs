@@ -9,18 +9,18 @@ use std::fs::File;
 #[derive(Clone, Copy, Debug)]
 pub struct Params {
     /// sectors per track (CP/M format requires uniform formatting)
-    sectors_per_track: u8,
+    pub sectors_per_track: u8,
     /// tracks (not cylinders!) at the beginning used for booting
-    reserved_tracks: u8,
+    pub reserved_tracks: u8,
     /// size of a sector in bytes
-    sector_size: u16,
+    pub sector_size: u16,
     /// sectors per logical allocation block
-    sectors_per_block: u8,
+    pub sectors_per_block: u8,
     /// number of blocks reserved for the file directory entries
-    dir_blocks: u8,
+    pub dir_blocks: u8,
 }
 
-pub enum ListFilesMode {
+pub enum LsMode {
     /// List all files (i.e. owned by all users), but not deleted files.
     All,
     /// List only files owned bya  given user.
@@ -73,19 +73,18 @@ impl CpmFs {
         })
     }
 
-    pub fn list_files(&self, mode: ListFilesMode) -> Result<Vec<FileItem>> {
+    pub fn list_files(&self, mode: LsMode) -> Result<Vec<FileItem>> {
         let mut file_entries: HashMap<FileId, Vec<&CpmDirEntry>> = HashMap::new();
         let valid_block_range = self.params.dir_blocks as u16..self.num_blocks;
 
-        let condition = match mode {
-            ListFilesMode::All => |de: &CpmDirEntry|de.used(),
-            ListFilesMode::Deleted => |de: &CpmDirEntry| de.used() || de.likely_deleted(valid_block_range),
-            ListFilesMode::OwnedBy(num) => |de: &CpmDirEntry| de.user == num
+        let condition = |de: &&CpmDirEntry| match mode {
+            LsMode::All => de.used(),
+            LsMode::Deleted => de.used() || de.likely_deleted(&valid_block_range),
+            LsMode::OwnedBy(num) => de.user == num
         };
-        let it = self.dir_entries.iter().filter(condition);
 
         // group all the extends belonging to each file
-        for e in it {
+        for e in self.dir_entries.iter().filter(condition) {
             file_entries.entry(e.file_id()).or_insert_with(Vec::new).push(e);
         }
 
@@ -99,8 +98,7 @@ impl CpmFs {
             let block_list = sorted_extents.iter().map(|e| e.blocks).flatten().collect();
 
             files.push(FileItem {
-                // TODO: push it to CpmDirEntry
-                user: if first.used() { Some(first.user) } else { None },
+                user: first.owner(),
                 name: first.file_name(),
                 size: v.iter().map(|e| e.extent_size()).sum(),
                 block_list,
@@ -161,7 +159,7 @@ mod tests {
     use crate::cpm::cpm_fs::{CpmFs, Params};
     use std::fs::File;
     use std::path::PathBuf;
-    use crate::cpm::cpm_fs::ListFilesMode::All;
+    use crate::cpm::cpm_fs::LsMode::All;
 
     #[test]
     fn test_load_save_dsk() {
