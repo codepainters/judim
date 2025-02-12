@@ -70,10 +70,6 @@ impl CpmDirEntry {
         let extension = String::from_utf8_lossy(&self.extension);
         format!("{}.{}", name.trim_end(), extension.trim_end())
     }
-    //
-    // pub fn deleted(&self) -> bool {
-    //     self.user == 0xE5
-    // }
 
     pub fn used(&self) -> bool {
         self.user != 0xE5
@@ -83,9 +79,11 @@ impl CpmDirEntry {
         if self.used() { Some(self.user) } else { None }
     }
 
-    #[allow(unused)]
     pub fn likely_deleted(&self, valid_block_range: &Range<u16>) -> bool {
-        false
+        // heuristic: marked as unused, but valid block list. This eliminates entries
+        // filled with 0xE5 after formatting.
+        self.user == 0xE5 &&
+            self.blocks.iter().all(|b| *b == 0 || valid_block_range.contains(b))
     }
 
     pub fn file_id(&self) -> FileId {
