@@ -1,7 +1,7 @@
 mod cpm;
 mod dsk;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use prettytable::{format, row, Table};
 use std::fs::File;
 use std::process::exit;
@@ -41,6 +41,16 @@ enum Commands {
     Put,
 }
 
+#[derive(Clone, ValueEnum, Debug, PartialEq)]
+enum LsFormat {
+    /// Only file names, as ls -1 on Linux
+    Simple,
+    /// Default tabular format with user ID and file size
+    Default,
+    /// As default, but with block list
+    Verbose,
+}
+
 #[derive(Args)]
 struct LsArgs {
     /// Include deleted files
@@ -49,6 +59,9 @@ struct LsArgs {
     /// Filter by the user number
     #[arg(short, long)]
     user: Option<u8>,
+    /// Output format
+    #[arg(short, long, value_enum, default_value_t = LsFormat::Default)]
+    format: LsFormat,
 }
 
 fn ls(fs: &CpmFs, args: LsArgs) {
@@ -68,18 +81,38 @@ fn ls(fs: &CpmFs, args: LsArgs) {
     let mut files = fs.list_files(mode).unwrap();
     files.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-    table.set_titles(row!["User", "Size", "Name"]);
-    for f in files {
-        let user = if let Some(u) = f.user {
-            u.to_string()
-        } else {
-            "-".to_string()
-        };
-        table.add_row(row![user, f.size, f.name]);
+    match args.format {
+        LsFormat::Simple => {
+            for f in files {
+                println!("{}", f.name);
+            }
+        }
+        LsFormat::Default | LsFormat::Verbose => {
+            let mut table = Table::new();
+            table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
+
+            if args.format == LsFormat::Verbose {
+                table.set_titles(row!["User", "Name", "Size", "Blocks"]);
+            } else {
+                table.set_titles(row!["User", "Name", "Size",]);
+            }
+
+            for f in files {
+                let user = if let Some(u) = f.user {
+                    u.to_string()
+                } else {
+                    "-".to_string()
+                };
+                if args.format == LsFormat::Verbose {
+                    let blocks = f.block_list.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+                    table.add_row(row![user, f.name, f.size, blocks]);
+                } else {
+                    table.add_row(row![user, f.name, f.size]);
+                }
+            }
+            table.printstd();
+        }
     }
-    table.printstd();
 }
 
 fn main() {
