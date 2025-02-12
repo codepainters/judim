@@ -1,10 +1,10 @@
 mod cpm;
 mod dsk;
 
+use clap::{Args, Parser, Subcommand};
+use prettytable::{format, row, Table};
 use std::fs::File;
 use std::process::exit;
-use clap::{Args, Parser, Subcommand};
-use prettytable::{Table, format, row};
 
 use crate::cpm::{CpmFs, LsMode, Params};
 
@@ -72,12 +72,15 @@ fn ls(fs: &CpmFs, args: LsArgs) {
     table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
     table.set_titles(row!["User", "Size", "Name"]);
     for f in files {
-        let user = if let Some(u) = f.user { u.to_string() } else { "-".to_string() };
+        let user = if let Some(u) = f.user {
+            u.to_string()
+        } else {
+            "-".to_string()
+        };
         table.add_row(row![user, f.size, f.name]);
     }
     table.printstd();
 }
-
 
 fn main() {
     let cli = Cli::parse();
@@ -92,7 +95,6 @@ fn main() {
         dir_blocks: 4,
     };
     let mut fs = CpmFs::load(&mut file, params).unwrap();
-
 
     match cli.command {
         Commands::Ls(args) => ls(&fs, args),

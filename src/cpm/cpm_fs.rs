@@ -26,7 +26,7 @@ pub enum LsMode {
     /// List only files owned bya  given user.
     OwnedBy(u8),
     /// List all files, included deleted ones.
-    Deleted
+    Deleted,
 }
 
 /// Filesystem file list element.
@@ -80,7 +80,7 @@ impl CpmFs {
         let condition = |de: &&CpmDirEntry| match mode {
             LsMode::All => de.used(),
             LsMode::Deleted => de.used() || de.likely_deleted(&valid_block_range),
-            LsMode::OwnedBy(num) => de.user == num
+            LsMode::OwnedBy(num) => de.user == num,
         };
 
         // group all the extends belonging to each file
@@ -156,10 +156,10 @@ impl CpmFs {
 
 #[cfg(test)]
 mod tests {
+    use crate::cpm::cpm_fs::LsMode::All;
     use crate::cpm::cpm_fs::{CpmFs, Params};
     use std::fs::File;
     use std::path::PathBuf;
-    use crate::cpm::cpm_fs::LsMode::All;
 
     #[test]
     fn test_load_save_dsk() {
