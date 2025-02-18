@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use binrw::{binrw, BinReaderExt};
 use std::io::Cursor;
 use std::ops::{Range, Shl};
-
+use crate::cpm::file_id::FileId;
 // TODO:
 //   - validate block list
 //   - implement saving back to slice
@@ -33,13 +33,6 @@ pub struct CpmDirEntry {
     pub record_count: u8,
     /// block numbers
     pub blocks: [u16; 8],
-}
-
-#[derive(Eq, PartialEq, Hash)]
-pub struct FileId {
-    user: u8,
-    name: [u8; 8],
-    extension: [u8; 3],
 }
 
 impl CpmDirEntry {

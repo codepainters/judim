@@ -1,9 +1,10 @@
-use crate::cpm::dir_entry::{CpmDirEntry, FileId};
+use crate::cpm::dir_entry::CpmDirEntry;
 use crate::dsk::DskImage;
 use crate::dsk::CHS;
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::fs::File;
+use crate::cpm::file_id::FileId;
 
 /// CP/M filesystem parameters
 #[derive(Clone, Copy, Debug)]
