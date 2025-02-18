@@ -1,8 +1,8 @@
+use crate::cpm::file_id::FileId;
 use anyhow::{bail, Result};
 use binrw::{binrw, BinReaderExt};
 use std::io::Cursor;
 use std::ops::{Range, Shl};
-use crate::cpm::file_id::FileId;
 // TODO:
 //   - validate block list
 //   - implement saving back to slice

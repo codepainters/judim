@@ -17,7 +17,7 @@ pub const MAX_USER_ID: u8 = 15;
 pub const MAX_NAME_LEN: usize = 8;
 pub const MAX_EXT_LEN: usize = 3;
 
-lazy_static!{
+lazy_static! {
     static ref ValidNameRe: Regex = Regex::new(r"^[A-Za-z0-9!#\$%&'\(\)\-@^_{\}~]+ *$").unwrap();
     static ref ValidExtRe: Regex = Regex::new(r"^[A-Za-z0-9!#\$%&'\(\)\-@^_{\}~]* *$").unwrap();
 }
@@ -31,7 +31,7 @@ pub struct FileId {
 
 impl FileId {
     /// Create FileId from string and user ID.
-    /// 
+    ///
     /// Note: CP/M filesystem is case-sensitive (contrary to common belief), but CCP converts
     /// all names to upper case. We mimic it here - if mode is Normalized, name is converted
     /// to uppercase, use it when creating new directory entries.
@@ -63,7 +63,7 @@ impl FileId {
     }
 
     /// Create FileId instance by parsing first 12 bytes of directory entry.
-    /// 
+    ///
     /// Note: flags (stored as MSB of extension bytes) are not parsed here.
     pub fn from_bytes(bytes: &[u8; 12]) -> Result<Self> {
         let user = bytes[0];
@@ -97,7 +97,7 @@ impl FileId {
     }
 
     /// Serialize data back (in place) to a given mutable slice.
-    /// 
+    ///
     /// Note: for deleted entries we only set the first byte, leaving everything else
     /// untouched. This is to preserve deleted entries as is when serializing the whole image
     /// back to dsk file.
@@ -227,11 +227,10 @@ mod tests {
         assert!(FileId::from_bytes(b"\x00        zX ").is_err());
         // name with byte >127
         assert!(FileId::from_bytes(b"\x00\xAA       zX ").is_err());
-        
+
         // empty extension is OK
         assert!(FileId::from_bytes(b"\x00TeeT       ").is_ok());
         // so is extension with >127 code (MSB is for flags)
         assert!(FileId::from_bytes(b"\x00TeeT    \xC1  ").is_ok());
-        
     }
 }
