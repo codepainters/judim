@@ -81,21 +81,21 @@ impl CpmFs {
         let condition = |de: &&CpmDirEntry| match mode {
             LsMode::All => de.used(),
             LsMode::Deleted => de.used() || de.likely_deleted(&valid_block_range),
-            LsMode::OwnedBy(num) => de.user == num,
+            LsMode::OwnedBy(num) => de.owner() == Some(num),
         };
 
         // group all the extends belonging to each file
         for e in self.dir_entries.iter().filter(condition) {
-            file_entries.entry(e.file_id()).or_insert_with(Vec::new).push(e);
+            file_entries.entry(e.file_id).or_insert_with(Vec::new).push(e);
         }
 
         // TODO: use map() ?
         let mut files: Vec<FileItem> = Vec::with_capacity(file_entries.len());
-        for (k, v) in file_entries.iter() {
+        for (_, v) in file_entries.iter() {
             let first = v[0];
 
             let mut sorted_extents = v.clone();
-            sorted_extents.sort_unstable_by_key(|e| e.extent_number());
+            sorted_extents.sort_unstable_by_key(|e| e.extent);
             let block_list = sorted_extents.iter().map(|e| e.blocks).flatten().collect();
 
             files.push(FileItem {
@@ -132,7 +132,7 @@ impl CpmFs {
 
             let sector_entries: Vec<CpmDirEntry> = sector
                 .chunks(32)
-                .map(|chunk| CpmDirEntry::from_bytes(chunk))
+                .map(|chunk| CpmDirEntry::from_bytes(chunk.try_into().unwrap()))
                 .collect::<Result<Vec<_>>>()?;
             entries.extend(sector_entries);
         }

@@ -22,7 +22,7 @@ lazy_static! {
     static ref ValidExtRe: Regex = Regex::new(r"^[A-Za-z0-9!#\$%&'\(\)\-@^_{\}~]* *$").unwrap();
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Copy, Clone)]
 pub struct FileId {
     pub user: u8,
     pub name: [u8; 8],
@@ -30,6 +30,8 @@ pub struct FileId {
 }
 
 impl FileId {
+    const SIZE: usize = 12;
+
     /// Create FileId from string and user ID.
     ///
     /// Note: CP/M filesystem is case-sensitive (contrary to common belief), but CCP converts
@@ -65,7 +67,7 @@ impl FileId {
     /// Create FileId instance by parsing first 12 bytes of directory entry.
     ///
     /// Note: flags (stored as MSB of extension bytes) are not parsed here.
-    pub fn from_bytes(bytes: &[u8; 12]) -> Result<Self> {
+    pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Result<Self> {
         let user = bytes[0];
         let name = &bytes[1..1 + MAX_NAME_LEN];
         let extension = &bytes[1 + MAX_NAME_LEN..1 + MAX_NAME_LEN + MAX_EXT_LEN];

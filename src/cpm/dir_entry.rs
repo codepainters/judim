@@ -1,13 +1,6 @@
 use crate::cpm::file_id::FileId;
 use anyhow::{bail, Result};
-use binrw::{binrw, BinReaderExt};
-use std::io::Cursor;
-use std::ops::{Range, Shl};
-// TODO:
-//   - validate block list
-//   - implement saving back to slice
-//   - parse extra flags (get rid of binrw? use calc?)
-//   - encapsulate
+use std::ops::Range;
 
 /// CpmDirEntry structure represents a directory entry as stored
 /// in the CP/M filesystem directory.
@@ -15,62 +8,90 @@ use std::ops::{Range, Shl};
 /// Note: depending on the size of the filesystem, DirEntry
 /// can store either 16 * u8 or 8 * u16 block numbers. This
 /// implementation hardcodes the second case.
-#[binrw]
-#[brw(little)]
 pub struct CpmDirEntry {
-    /// user ID (0..15) or 0xE5 for deleted entries
-    pub user: u8,
-    /// file name, 0x20-padded
-    pub name: [u8; 8],
-    /// extension, 0x20-padded
-    pub extension: [u8; 3],
+    pub file_id: FileId,
     /// extent number, used for files spanning more than one dir entry
-    pub extent_l: u8,
-    _reserved: u8,
-    /// extent number, higher byte
-    pub extent_h: u8,
+    pub extent: u16,
     /// file size expressed as number of 128-byte records
     pub record_count: u8,
     /// block numbers
     pub blocks: [u16; 8],
+    /// read-only flag
+    pub read_only: bool,
+    /// system file flag
+    pub system_file: bool,
+    /// archived file flag
+    pub archived: bool,
 }
 
 impl CpmDirEntry {
-    pub fn from_bytes(data: &[u8]) -> Result<CpmDirEntry> {
-        let d: CpmDirEntry = Cursor::new(data).read_le()?;
-        if d.user != 0xE5 && d.user > 15 {
-            bail!("Invalid user number: {}", d.user);
-        }
-        if d.user != 0xE5 && !(d.name.is_ascii() && d.extension.is_ascii()) {
-            bail!("Non-ASCII name or extension");
+    pub fn from_bytes(data: &[u8; 32]) -> Result<CpmDirEntry> {
+        let file_id_bytes = &data[0..12].try_into().unwrap();
+        let file_id = FileId::from_bytes(file_id_bytes)?;
+
+        let (x_h, x_l) = (data[14] as u16, data[12] as u16);
+        let extent = (x_h << 8) + x_l;
+        let record_count = data[15];
+
+        // FIXME: should we store exact bytes for deleted entries (possibly invalid)?
+        // FIXME: when to trim the list?
+        let block_bytes = &data[16..32];
+
+        let mut blocks = [0u16; 8];
+        for (i, chunk) in block_bytes.chunks_exact(2).enumerate() {
+            blocks[i] = u16::from_le_bytes([chunk[0], chunk[1]]);
         }
 
-        // TODO: validate, that there are no non-zero block entries after first zero
+        // Note: only check validity for actually used entries! Still we want
+        // to keep the info for unsued (possibly deleted) entries.
+        if file_id.user != 0xE5 {
+            if !Self::has_only_trailing_zeros(&blocks) {
+                bail!(
+                    "Invalid block list for {} extent {}: {:?}",
+                    file_id.filename(),
+                    extent,
+                    blocks
+                );
+            }
+        }
 
-        Ok(d)
+        let read_only = file_id.extension[0] & 0x80 != 0;
+        let system_file = file_id.extension[1] & 0x80 != 0;
+        let archived = file_id.extension[2] & 0x80 != 0;
+
+        Ok(CpmDirEntry {
+            file_id,
+            extent,
+            record_count,
+            blocks,
+            read_only,
+            system_file,
+            archived,
+        })
+    }
+
+    fn has_only_trailing_zeros(s: &[u16]) -> bool {
+        match s.iter().position(|&x| x == 0) {
+            Some(pos) => s[pos..].iter().all(|&x| x == 0),
+            None => true, // No zeros at all
+        }
     }
 
     pub fn extent_size(&self) -> usize {
         self.record_count as usize * 128
     }
 
-    pub fn extent_number(&self) -> u16 {
-        (self.extent_h as u16).shl(8) | self.extent_l as u16
-    }
-
     pub fn file_name(&self) -> String {
-        let name = String::from_utf8_lossy(&self.name);
-        let extension = String::from_utf8_lossy(&self.extension);
-        format!("{}.{}", name.trim_end(), extension.trim_end())
+        self.file_id.filename()
     }
 
     pub fn used(&self) -> bool {
-        self.user != 0xE5
+        self.file_id.user != 0xE5
     }
 
     pub fn owner(&self) -> Option<u8> {
         if self.used() {
-            Some(self.user)
+            Some(self.file_id.user)
         } else {
             None
         }
@@ -79,14 +100,6 @@ impl CpmDirEntry {
     pub fn likely_deleted(&self, valid_block_range: &Range<u16>) -> bool {
         // heuristic: marked as unused, but valid block list. This eliminates entries
         // filled with 0xE5 after formatting.
-        self.user == 0xE5 && self.blocks.iter().all(|b| *b == 0 || valid_block_range.contains(b))
-    }
-
-    pub fn file_id(&self) -> FileId {
-        FileId {
-            user: self.user,
-            name: self.name,
-            extension: self.extension,
-        }
+        self.file_id.user == 0xE5 && self.blocks.iter().all(|b| *b == 0 || valid_block_range.contains(b))
     }
 }
