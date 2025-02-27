@@ -96,7 +96,7 @@ impl CpmFs {
 
             let mut sorted_extents = v.clone();
             sorted_extents.sort_unstable_by_key(|e| e.extent);
-            let block_list = sorted_extents.iter().map(|e| e.blocks).flatten().collect();
+            let block_list = sorted_extents.iter().map(|e| e.blocks()).flatten().collect();
 
             files.push(FileItem {
                 user: first.owner(),
@@ -142,7 +142,7 @@ impl CpmFs {
     fn calc_used_blocks(num_blocks: u16, dir_entries: &Vec<CpmDirEntry>) -> Result<Vec<bool>> {
         let mut used_blocks = vec![false; num_blocks as usize];
         for e in dir_entries.iter().filter(|e| e.used()) {
-            for b in e.blocks {
+            for b in e.blocks() {
                 if b != 0 {
                     if used_blocks[b as usize] {
                         bail!("Block {} used more than once", b)

@@ -15,7 +15,7 @@ pub struct CpmDirEntry {
     /// file size expressed as number of 128-byte records
     pub record_count: u8,
     /// block numbers
-    pub blocks: [u16; 8],
+    blocks: [u16; 8],
     /// read-only flag
     pub read_only: bool,
     /// system file flag
@@ -33,10 +33,7 @@ impl CpmDirEntry {
         let extent = (x_h << 8) + x_l;
         let record_count = data[15];
 
-        // FIXME: should we store exact bytes for deleted entries (possibly invalid)?
-        // FIXME: when to trim the list?
         let block_bytes = &data[16..32];
-
         let mut blocks = [0u16; 8];
         for (i, chunk) in block_bytes.chunks_exact(2).enumerate() {
             blocks[i] = u16::from_le_bytes([chunk[0], chunk[1]]);
@@ -101,5 +98,14 @@ impl CpmDirEntry {
         // heuristic: marked as unused, but valid block list. This eliminates entries
         // filled with 0xE5 after formatting.
         self.file_id.user == 0xE5 && self.blocks.iter().all(|b| *b == 0 || valid_block_range.contains(b))
+    }
+
+    /// Returns list of actual blocks used by this entry (i.e. trailing zeros get trimmed).
+    pub fn blocks(&self) -> Vec<u16> {
+        if let Some(last_nonzero) = self.blocks.iter().rposition(|&x| x != 0) {
+            self.blocks[0..last_nonzero + 1].to_vec()
+        } else {
+            vec![]
+        }
     }
 }
