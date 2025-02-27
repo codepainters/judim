@@ -7,6 +7,7 @@ use std::fs::File;
 use std::process::exit;
 
 use crate::cpm::{CpmFs, LsMode, Params};
+use fast_glob::glob_match;
 
 #[derive(Parser)]
 #[command(name = "judim")]
@@ -62,6 +63,8 @@ struct LsArgs {
     /// Output format
     #[arg(short, long, value_enum, default_value_t = LsFormat::Default)]
     format: LsFormat,
+    /// Glob expression to filter the files
+    glob: Option<String>,
 }
 
 fn ls(fs: &CpmFs, args: LsArgs) {
@@ -79,6 +82,9 @@ fn ls(fs: &CpmFs, args: LsArgs) {
     };
 
     let mut files = fs.list_files(mode).unwrap();
+    if let Some(glob) = args.glob {
+        files = files.into_iter().filter(|file| glob_match( &glob, &file.name)).collect();
+    }
     files.sort_by(|a, b| a.name.cmp(&b.name));
 
     match args.format {
