@@ -1,8 +1,8 @@
-use crate::cpm::dir_entry::CpmDirEntry;
+use crate::cpm::dir_entry::{CpmDirEntry, BLOCKS_PER_EXTENT};
 use crate::cpm::file_id::FileId;
 use crate::dsk::DskImage;
 use crate::dsk::CHS;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 use std::fs::File;
 
@@ -91,14 +91,13 @@ impl CpmFs {
 
         // TODO: use map() ?
         let mut files: Vec<FileItem> = Vec::with_capacity(file_entries.len());
-        for (_, v) in file_entries.iter() {
+        for (_, v) in file_entries.iter_mut() {
             let first = v[0];
 
-            let mut sorted_extents = v.clone();
-            sorted_extents.sort_unstable_by_key(|e| e.extent);
-
-            // TODO: check consistency (all blocks but last must be full)
-            let block_list = sorted_extents.iter().map(|e| e.blocks()).flatten().collect();
+            v.sort_unstable_by_key(|e| e.extent);
+            let block_list = self
+                .blocks_from_sorted_extents(v)
+                .with_context(|| format!("File '{}' entry invalid.", first.file_name()))?;
 
             files.push(FileItem {
                 user: first.owner(),
@@ -109,6 +108,30 @@ impl CpmFs {
         }
 
         Ok(files)
+    }
+
+    fn blocks_from_sorted_extents(&self, extents: &mut Vec<&CpmDirEntry>) -> Result<Vec<u16>> {
+        let records_per_sector = self.params.sector_size as usize / 128;
+        let records_per_extent = self.params.sectors_per_block as usize * records_per_sector * BLOCKS_PER_EXTENT;
+
+        for (idx, e) in extents.iter().enumerate() {
+            // ensure extents are numbered 0..n-1
+            if e.extent as usize != idx {
+                bail!("Inconsistent extent index (expected {}, found {}).", idx, e.extent);
+            }
+            // ensure all extents but the last are fully filled
+            if idx < extents.len() - 1 && (e.record_count as usize) < records_per_extent {
+                bail!(
+                    "Extent {} is too small ({} records, {} expected).",
+                    idx,
+                    e.record_count,
+                    records_per_extent
+                );
+            }
+        }
+
+        let block_list = extents.iter().map(|e| e.blocks()).flatten().collect();
+        Ok(block_list)
     }
 
     pub fn block_size(&self) -> usize {

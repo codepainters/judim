@@ -2,6 +2,8 @@ use crate::cpm::file_id::FileId;
 use anyhow::{bail, Result};
 use std::ops::Range;
 
+pub const BLOCKS_PER_EXTENT: usize = 8;
+
 /// CpmDirEntry structure represents a directory entry as stored
 /// in the CP/M filesystem directory.
 ///
@@ -15,7 +17,7 @@ pub struct CpmDirEntry {
     /// file size expressed as number of 128-byte records
     pub record_count: u8,
     /// block numbers
-    blocks: [u16; 8],
+    blocks: [u16; BLOCKS_PER_EXTENT],
     /// read-only flag
     pub read_only: bool,
     /// system file flag
@@ -34,7 +36,7 @@ impl CpmDirEntry {
         let record_count = data[15];
 
         let block_bytes = &data[16..32];
-        let mut blocks = [0u16; 8];
+        let mut blocks = [0u16; BLOCKS_PER_EXTENT];
         for (i, chunk) in block_bytes.chunks_exact(2).enumerate() {
             blocks[i] = u16::from_le_bytes([chunk[0], chunk[1]]);
         }

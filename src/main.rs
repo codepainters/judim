@@ -229,7 +229,7 @@ fn main() {
     };
 
     if let Err(e) = result {
-        println!("Error: {}", e);
+        println!("Error: {:?}", e);
         exit(1);
     }
 }
