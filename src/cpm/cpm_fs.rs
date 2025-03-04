@@ -109,6 +109,22 @@ impl CpmFs {
         Ok(files)
     }
 
+    pub fn block_size(&self) -> usize {
+        self.params.sector_size as usize * self.params.sectors_per_block as usize
+    }
+
+    pub fn read_block(&self, block: u16, buf: &mut [u8]) -> Result<()> {
+        let first_lsi = block * self.params.sectors_per_block as u16;
+        let sides = self.disk.num_sides();
+        let sect_size = self.params.sector_size as usize;
+        for i in 0..self.params.sectors_per_block {
+            let chs = Self::lsi_to_chs(&self.params, sides, first_lsi + i as u16);
+            let buf_offs = i as usize * self.params.sector_size as usize;
+            buf[buf_offs..buf_offs + sect_size].copy_from_slice(self.disk.sector_as_slice(chs)?);
+        }
+        Ok(())
+    }
+
     /// Converts a logical sector index to a CHS sector address.
     fn lsi_to_chs(params: &Params, sides: u8, lsi: u16) -> CHS {
         let track = lsi / params.sectors_per_track as u16 + params.reserved_tracks as u16;

@@ -2,4 +2,4 @@ mod cpm_fs;
 mod dir_entry;
 mod file_id;
 
-pub use cpm_fs::{CpmFs, LsMode, Params};
+pub use cpm_fs::{CpmFs, FileItem, LsMode, Params};
