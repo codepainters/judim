@@ -4,6 +4,7 @@ mod dsk;
 use anyhow::{bail, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use prettytable::{format, row, Table};
+use std::cmp::min;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -158,7 +159,7 @@ fn get_files(fs: &CpmFs, args: GetArgs) -> Result<()> {
             } else {
                 target_path.to_owned()
             };
-            get_single_file(fs, f, &local_file)
+            get_single_file(fs, f, &local_file, args.text)
         }
         _ => {
             if !target_path.is_dir() {
@@ -166,20 +167,41 @@ fn get_files(fs: &CpmFs, args: GetArgs) -> Result<()> {
             }
             for f in &files {
                 let local_file = target_path.join(&f.name);
-                get_single_file(fs, f, &local_file)?;
+                get_single_file(fs, f, &local_file, args.text)?;
             }
             Ok(())
         }
     }
 }
 
-fn get_single_file(fs: &CpmFs, item: &FileItem, target: &Path) -> Result<()> {
+fn get_single_file(fs: &CpmFs, item: &FileItem, target: &Path, text_mode: bool) -> Result<()> {
     let mut f = File::create(&target)?;
-    let mut buf = vec![0; fs.block_size()];
+    let block_size = fs.block_size();
+    let mut buf = vec![0; block_size];
+
+    let mut size_left = item.size;
     for block in &item.block_list {
         fs.read_block(*block, &mut buf)?;
-        f.write_all(&buf)?;
+
+        // All chunks are of block_size bytes, except the last one,
+        // which can be shorter.
+        let chunk_size = min(size_left, block_size);
+        let chunk = &buf[0..chunk_size];
+
+        // In text mode we trim the file at first ^Z (0x1A) character.
+        if text_mode {
+            // It should happen in the last chunk, but it makes little sense checking that.
+            // Just write the bytes up to (not including) ^Z and return.
+            if let Some(trim_at) = chunk.iter().position(|&a| a == 0x1A) {
+                f.write_all(&chunk[0..trim_at])?;
+                return Ok(());
+            }
+        }
+
+        f.write_all(&buf[0..chunk_size])?;
+        size_left -= chunk_size;
     }
+    assert_eq!(size_left, 0);
     Ok(())
 }
 

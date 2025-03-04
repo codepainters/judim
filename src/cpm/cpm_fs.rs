@@ -96,6 +96,8 @@ impl CpmFs {
 
             let mut sorted_extents = v.clone();
             sorted_extents.sort_unstable_by_key(|e| e.extent);
+
+            // TODO: check consistency (all blocks but last must be full)
             let block_list = sorted_extents.iter().map(|e| e.blocks()).flatten().collect();
 
             files.push(FileItem {
