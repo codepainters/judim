@@ -1,7 +1,7 @@
 mod cpm;
 mod dsk;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use prettytable::{format, row, Table};
 use std::fs::File;
@@ -9,7 +9,6 @@ use std::io::Write;
 use std::path::Path;
 use std::process::exit;
 
-use crate::cpm::LsMode::OwnedBy;
 use crate::cpm::{CpmFs, FileItem, LsMode, Params};
 use fast_glob::glob_match;
 
@@ -85,10 +84,9 @@ struct GetArgs {
     local_path: String,
 }
 
-fn ls(fs: &CpmFs, args: LsArgs) {
+fn ls(fs: &CpmFs, args: LsArgs) -> Result<()> {
     if args.deleted && args.user.is_some() {
-        println!("--deleted and --user options are mutually exclusive");
-        exit(1);
+        bail!("--deleted and --user options are mutually exclusive");
     }
 
     let mode = if args.deleted {
@@ -99,7 +97,7 @@ fn ls(fs: &CpmFs, args: LsArgs) {
         LsMode::All
     };
 
-    let mut files = fs.list_files(mode).unwrap();
+    let mut files = fs.list_files(mode)?;
     if let Some(glob) = args.glob {
         files = files.into_iter().filter(|file| glob_match(&glob, &file.name)).collect();
     }
@@ -136,13 +134,14 @@ fn ls(fs: &CpmFs, args: LsArgs) {
             }
             table.printstd();
         }
-    }
+    };
+
+    Ok(())
 }
 
-fn get_files(fs: &CpmFs, args: GetArgs) {
+fn get_files(fs: &CpmFs, args: GetArgs) -> Result<()> {
     let files: Vec<FileItem> = fs
-        .list_files(OwnedBy(args.user.unwrap_or(0)))
-        .unwrap()
+        .list_files(LsMode::OwnedBy(args.user.unwrap_or(0)))?
         .into_iter()
         .filter(|file| glob_match(&args.image_file, &file.name))
         .collect();
@@ -150,8 +149,7 @@ fn get_files(fs: &CpmFs, args: GetArgs) {
 
     match files.len() {
         0 => {
-            println!("No files on the image matches {}.", args.image_file);
-            exit(1);
+            bail!("No files on the image matches {}.", args.image_file);
         }
         1 => {
             let f = &files[0];
@@ -160,19 +158,19 @@ fn get_files(fs: &CpmFs, args: GetArgs) {
             } else {
                 target_path.to_owned()
             };
-            get_single_file(fs, f, &local_file);
+            get_single_file(fs, f, &local_file)
         }
         _ => {
             if !target_path.is_dir() {
-                println!("Multiple files matches, target must be a directory.");
-                exit(1);
+                bail!("Multiple files match, target must be a directory.");
             }
             for f in &files {
                 let local_file = target_path.join(&f.name);
-                get_single_file(fs, f, &local_file).unwrap();
+                get_single_file(fs, f, &local_file)?;
             }
+            Ok(())
         }
-    };
+    }
 }
 
 fn get_single_file(fs: &CpmFs, item: &FileItem, target: &Path) -> Result<()> {
@@ -199,13 +197,17 @@ fn main() {
     };
     let fs = CpmFs::load(&mut file, params).unwrap();
 
-    match cli.command {
+    let result = match cli.command {
         Commands::Ls(args) => ls(&fs, args),
-        Commands::Get(args) => {
-            get_files(&fs, args);
-        }
+        Commands::Get(args) => get_files(&fs, args),
         Commands::Put => {
             println!("Putting data into file: {}", &cli.image_file);
+            Ok(())
         }
+    };
+
+    if let Err(e) = result {
+        println!("Error: {}", e);
+        exit(1);
     }
 }
