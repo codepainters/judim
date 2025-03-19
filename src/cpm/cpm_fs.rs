@@ -3,8 +3,12 @@ use crate::cpm::file_id::FileId;
 use crate::dsk::DskImage;
 use crate::dsk::CHS;
 use anyhow::{bail, Context, Result};
+use std::cmp::min;
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom, Write};
+
+pub const RECORD_SIZE: usize = 128;
 
 /// CP/M filesystem parameters
 #[derive(Clone, Copy, Debug)]
@@ -110,8 +114,105 @@ impl CpmFs {
         Ok(files)
     }
 
+    pub fn read_file(&self, file: &FileItem, w: &mut impl Write, text_mode: bool) -> Result<()> {
+        let block_size = self.block_size();
+        let mut buf = vec![0; block_size];
+
+        let mut size_left = file.size;
+        for block in &file.block_list {
+            self.read_block(*block, &mut buf)?;
+
+            // All chunks are of block_size bytes, except the last one,
+            // which can be shorter.
+            let chunk_size = min(size_left, block_size);
+            let chunk = &buf[0..chunk_size];
+
+            // In text mode we trim the file at first ^Z (0x1A) character.
+            if text_mode {
+                // It should happen in the last chunk, but it makes little sense checking that.
+                // Just write the bytes up to (not including) ^Z and return.
+                if let Some(trim_at) = chunk.iter().position(|&a| a == 0x1A) {
+                    w.write_all(&chunk[0..trim_at])?;
+                    return Ok(());
+                }
+            }
+
+            w.write_all(&buf[0..chunk_size])?;
+            size_left -= chunk_size;
+        }
+        assert_eq!(size_left, 0);
+        Ok(())
+    }
+
+    pub fn write_file(&mut self, id: &FileId, file: &mut File, text_mode: bool) -> Result<()> {
+        file.seek(SeekFrom::Start(0))?;
+        let file_size = file.metadata()?.len() as usize;
+        let block_size = self.block_size();
+
+        let num_blocks = file_size.div_ceil(block_size);
+        let num_dents = num_blocks.div_ceil(BLOCKS_PER_EXTENT);
+        let blocks = self.get_free_blocks(num_blocks)?;
+        let dents = self.get_free_dents(num_dents)?;
+
+        // files are so small here, that we can read them at once
+        let mut buf = vec![0; file_size];
+        file.read_exact(&mut buf)?;
+        for (chunk, block) in buf.chunks_mut(block_size).zip(&blocks) {
+            // we terminate text files in the last block, unless it's a block boundary
+            // (it's not needed in such case, block size is always a multiple of record size)
+            if text_mode && chunk.len() < block_size {
+                chunk[chunk.len()] = 0x1A;
+            }
+
+            self.write_block(*block, chunk)?;
+            self.used_blocks[*block as usize] = true;
+        }
+
+        let mut size_left = file_size;
+        let max_bytes_per_extent = block_size * BLOCKS_PER_EXTENT;
+        for ((extent_idx, &dir_entry), blocks) in dents.iter().enumerate().zip(blocks.chunks(BLOCKS_PER_EXTENT)) {
+            let size = min(size_left, max_bytes_per_extent);
+            size_left -= size;
+
+            let records = size.div_ceil(RECORD_SIZE);
+            self.dir_entries[dir_entry] = CpmDirEntry::new(*id, extent_idx as u16, records as u8, blocks);
+        }
+
+        Ok(())
+    }
+
+    pub fn block_size(&self) -> usize {
+        self.params.sector_size as usize * self.params.sectors_per_block as usize
+    }
+
+    pub fn read_block(&self, block: u16, buf: &mut [u8]) -> Result<()> {
+        let first_lsi = block * self.params.sectors_per_block as u16;
+        let sides = self.disk.num_sides();
+        let sect_size = self.params.sector_size as usize;
+        for i in 0..self.params.sectors_per_block {
+            let chs = Self::lsi_to_chs(&self.params, sides, first_lsi + i as u16);
+            let buf_offs = i as usize * self.params.sector_size as usize;
+            buf[buf_offs..buf_offs + sect_size].copy_from_slice(self.disk.sector_as_slice(chs)?);
+        }
+        Ok(())
+    }
+
+    pub fn write_block(&mut self, block: u16, buf: &[u8]) -> Result<()> {
+        let first_lsi = block * self.params.sectors_per_block as u16;
+        let sides = self.disk.num_sides();
+        let sect_size = self.params.sector_size as usize;
+        assert!(buf.len() <= self.params.sectors_per_block as usize * sect_size);
+
+        for (i, chunk) in buf.chunks(sect_size).enumerate() {
+            let chs = Self::lsi_to_chs(&self.params, sides, first_lsi + i as u16);
+            let sect = self.disk.sector_as_slice_mut(chs)?;
+            sect[0..chunk.len()].copy_from_slice(chunk);
+        }
+        Ok(())
+    }
+
     fn blocks_from_sorted_extents(&self, extents: &mut Vec<&CpmDirEntry>) -> Result<Vec<u16>> {
-        let records_per_sector = self.params.sector_size as usize / 128;
+        let records_per_sector = self.params.sector_size as usize / RECORD_SIZE;
         let records_per_extent = self.params.sectors_per_block as usize * records_per_sector * BLOCKS_PER_EXTENT;
 
         for (idx, e) in extents.iter().enumerate() {
@@ -134,20 +235,38 @@ impl CpmFs {
         Ok(block_list)
     }
 
-    pub fn block_size(&self) -> usize {
-        self.params.sector_size as usize * self.params.sectors_per_block as usize
+    fn get_free_blocks(&self, count: usize) -> Result<Vec<u16>> {
+        let blocks: Vec<u16> = self
+            .used_blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, used)| if !used { Some(idx as u16) } else { None })
+            .take(count)
+            .collect();
+        if blocks.len() < count {
+            bail!("Not enough free blocks: {} available, {} required", blocks.len(), count);
+        }
+
+        Ok(blocks)
     }
 
-    pub fn read_block(&self, block: u16, buf: &mut [u8]) -> Result<()> {
-        let first_lsi = block * self.params.sectors_per_block as u16;
-        let sides = self.disk.num_sides();
-        let sect_size = self.params.sector_size as usize;
-        for i in 0..self.params.sectors_per_block {
-            let chs = Self::lsi_to_chs(&self.params, sides, first_lsi + i as u16);
-            let buf_offs = i as usize * self.params.sector_size as usize;
-            buf[buf_offs..buf_offs + sect_size].copy_from_slice(self.disk.sector_as_slice(chs)?);
+    fn get_free_dents(&self, count: usize) -> Result<Vec<usize>> {
+        let dents: Vec<usize> = self
+            .dir_entries
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, d)| if !d.used() { Some(idx) } else { None })
+            .take(count)
+            .collect();
+        if dents.len() < count {
+            bail!(
+                "Not enough free directory entries: {} available, {} required",
+                dents.len(),
+                count
+            );
         }
-        Ok(())
+
+        Ok(dents)
     }
 
     /// Converts a logical sector index to a CHS sector address.

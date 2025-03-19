@@ -69,6 +69,22 @@ impl CpmDirEntry {
         })
     }
 
+    pub fn new(file_id: FileId, extent: u16, record_count: u8, blocks: &[u16]) -> CpmDirEntry {
+        assert!(blocks.len() <= BLOCKS_PER_EXTENT);
+        let mut blocks_array = [0u16; BLOCKS_PER_EXTENT];
+        blocks_array[0..blocks.len()].copy_from_slice(blocks);
+
+        CpmDirEntry {
+            file_id,
+            extent,
+            record_count,
+            blocks: blocks_array,
+            read_only: false,
+            system_file: false,
+            archived: false,
+        }
+    }
+
     fn has_only_trailing_zeros(s: &[u16]) -> bool {
         match s.iter().position(|&x| x == 0) {
             Some(pos) => s[pos..].iter().all(|&x| x == 0),

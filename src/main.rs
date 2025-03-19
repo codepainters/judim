@@ -1,17 +1,17 @@
 mod cpm;
 mod dsk;
+mod file_arg;
 
 use anyhow::{bail, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use prettytable::{format, row, Table};
-use std::cmp::min;
 use std::fs::File;
-use std::io::Write;
 use std::path::Path;
 use std::process::exit;
 
-use crate::cpm::{CpmFs, FileItem, LsMode, Params};
+use cpm::{CpmFs, FileItem, LsMode, Params};
 use fast_glob::glob_match;
+use file_arg::FileArg;
 
 #[derive(Parser)]
 #[command(name = "judim")]
@@ -41,9 +41,9 @@ enum Commands {
     #[command(about = "Copy a file out of the disk image")]
     Get(GetArgs),
 
-    /// Write data into the file
-    #[command(about = "Copy a file into the disk image")]
-    Put,
+    /// Copy files
+    #[command(about = "Copy file or files to/from the disk image")]
+    Cp(CpArgs),
 }
 
 #[derive(Clone, ValueEnum, Debug, PartialEq)]
@@ -83,6 +83,19 @@ struct GetArgs {
     image_file: String,
     /// local file name or path
     local_path: String,
+}
+
+#[derive(Args)]
+struct CpArgs {
+    /// text mode (trim at ^Z)
+    #[arg(short, long)]
+    text: bool,
+    /// source files
+    #[arg(required = true)]
+    src_files: Vec<FileArg>,
+    /// destination file or directory (must be directory for multiple sources)
+    #[arg(required = true)]
+    dst_file: FileArg,
 }
 
 fn ls(fs: &CpmFs, args: LsArgs) -> Result<()> {
@@ -159,49 +172,26 @@ fn get_files(fs: &CpmFs, args: GetArgs) -> Result<()> {
             } else {
                 target_path.to_owned()
             };
-            get_single_file(fs, f, &local_file, args.text)
+            let mut lf = File::create(local_file)?;
+            fs.read_file(f, &mut lf, args.text)
         }
         _ => {
             if !target_path.is_dir() {
                 bail!("Multiple files match, target must be a directory.");
             }
             for f in &files {
-                let local_file = target_path.join(&f.name);
-                get_single_file(fs, f, &local_file, args.text)?;
+                let mut lf = File::create(&target_path.join(&f.name))?;
+                fs.read_file(f, &mut lf, args.text)?;
             }
             Ok(())
         }
     }
 }
 
-fn get_single_file(fs: &CpmFs, item: &FileItem, target: &Path, text_mode: bool) -> Result<()> {
-    let mut f = File::create(&target)?;
-    let block_size = fs.block_size();
-    let mut buf = vec![0; block_size];
+fn cp_files(fs: &CpmFs, args: CpArgs) -> Result<()> {
+    dbg!(&args.src_files);
+    dbg!(&args.dst_file);
 
-    let mut size_left = item.size;
-    for block in &item.block_list {
-        fs.read_block(*block, &mut buf)?;
-
-        // All chunks are of block_size bytes, except the last one,
-        // which can be shorter.
-        let chunk_size = min(size_left, block_size);
-        let chunk = &buf[0..chunk_size];
-
-        // In text mode we trim the file at first ^Z (0x1A) character.
-        if text_mode {
-            // It should happen in the last chunk, but it makes little sense checking that.
-            // Just write the bytes up to (not including) ^Z and return.
-            if let Some(trim_at) = chunk.iter().position(|&a| a == 0x1A) {
-                f.write_all(&chunk[0..trim_at])?;
-                return Ok(());
-            }
-        }
-
-        f.write_all(&buf[0..chunk_size])?;
-        size_left -= chunk_size;
-    }
-    assert_eq!(size_left, 0);
     Ok(())
 }
 
@@ -222,10 +212,7 @@ fn main() {
     let result = match cli.command {
         Commands::Ls(args) => ls(&fs, args),
         Commands::Get(args) => get_files(&fs, args),
-        Commands::Put => {
-            println!("Putting data into file: {}", &cli.image_file);
-            Ok(())
-        }
+        Commands::Cp(args) => cp_files(&fs, args),
     };
 
     if let Err(e) = result {
