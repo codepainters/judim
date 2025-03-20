@@ -2,7 +2,7 @@ mod cpm;
 mod dsk;
 mod file_arg;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use prettytable::{format, row, Table};
 use std::fs::File;
@@ -195,10 +195,9 @@ fn cp_files(fs: &CpmFs, args: CpArgs) -> Result<()> {
     Ok(())
 }
 
-fn main() {
+fn cli() -> Result<()> {
     let cli = Cli::parse();
-
-    let mut file = File::open(&cli.image_file).unwrap();
+    let mut file = File::open(&cli.image_file).context("Can't open image file")?;
 
     let params = Params {
         sectors_per_track: 9,
@@ -207,14 +206,17 @@ fn main() {
         sectors_per_block: 4,
         dir_blocks: 4,
     };
-    let fs = CpmFs::load(&mut file, params).unwrap();
+    let fs = CpmFs::load(&mut file, params).context("Error loading image file")?;
 
-    let result = match cli.command {
+    match cli.command {
         Commands::Ls(args) => ls(&fs, args),
         Commands::Get(args) => get_files(&fs, args),
         Commands::Cp(args) => cp_files(&fs, args),
-    };
+    }
+}
 
+fn main() {
+    let result = cli();
     if let Err(e) = result {
         println!("Error: {:?}", e);
         exit(1);
