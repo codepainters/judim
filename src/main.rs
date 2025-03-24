@@ -189,8 +189,61 @@ fn get_files(fs: &CpmFs, args: GetArgs) -> Result<()> {
 }
 
 fn cp_files(fs: &CpmFs, args: CpArgs) -> Result<()> {
-    dbg!(&args.src_files);
-    dbg!(&args.dst_file);
+    match &args.dst_file {
+        FileArg::Local { path } => cp_files_from_image(fs, &path, &args),
+        FileArg::Image { .. } => cp_files_to_image(fs, &args),
+    }
+}
+
+fn cp_files_from_image(fs: &CpmFs, dst: &Path, args: &CpArgs) -> Result<()> {
+    let sources = args
+        .src_files
+        .iter()
+        .map(|f| {
+            let FileArg::Image { owner, name } = f else {
+                bail!("All sources must be on the image if copying from the image to the local filesystem.");
+            };
+            let Some(name) = name else {
+                dbg!(f);
+                bail!("Source argument is missing the file name.");
+            };
+
+            let files: Vec<FileItem> = fs
+                .list_files(LsMode::OwnedBy(*owner))?
+                .into_iter()
+                .filter(|file| glob_match(name, &file.name))
+                .collect();
+
+            Ok(files)
+        })
+        .try_fold(vec![], |mut files, i| {
+            i.map(|chunk| {
+                files.extend(chunk);
+                files
+            })
+        })?;
+
+    if sources.len() > 1 && !dst.is_dir() {
+        bail!("Multiple source files match, target must be a directory.");
+    }
+
+    for s in &sources {
+        let local_file = if dst.is_dir() {
+            dst.join(&s.name)
+        } else {
+            dst.to_owned()
+        };
+        let mut lf = File::create(local_file)?;
+        fs.read_file(s, &mut lf, args.text)?
+    }
+
+    Ok(())
+}
+
+fn cp_files_to_image(fs: &CpmFs, args: &CpArgs) -> Result<()> {
+    if (&args.src_files).iter().any(|f| !f.is_local()) {
+        bail!("All sources must be on the local filesystem if copying to the image.")
+    }
 
     Ok(())
 }

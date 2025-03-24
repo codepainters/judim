@@ -1,7 +1,10 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::path::PathBuf;
 use std::str::FromStr;
+
+use crate::cpm::MAX_USER_ID;
 
 lazy_static! {
     static ref ImageFileRe: Regex = Regex::new(r"^(?:(\d+):|:)(.*)$").unwrap();
@@ -9,21 +12,13 @@ lazy_static! {
 
 const DEFAULT_USER: u8 = 0;
 
-#[derive(Clone, Debug)]
-pub struct FileLocal {
-    pub name: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct FileImage {
-    pub owner: u8,
-    pub name: String,
-}
+// FIXME: FileArg could use Option<&str>, but for reasons I don't know yet,
+//   &Path is not Clone. Sticking to owned types for now.
 
 #[derive(Clone, Debug)]
 pub enum FileArg {
-    Local(FileLocal),
-    Image(FileImage),
+    Local { path: PathBuf },
+    Image { owner: u8, name: Option<String> },
 }
 
 impl FromStr for FileArg {
@@ -38,15 +33,31 @@ impl FromStr for FileArg {
                 DEFAULT_USER
             };
 
-            // TODO: check if owner is in range
+            if owner > MAX_USER_ID {
+                bail!("User ID {} is not in range 0..{}", owner, MAX_USER_ID);
+            }
 
-            Self::Image(FileImage {
-                owner,
-                name: caps[2].to_string(),
-            })
+            // normalize empty name to None, for "dir mode"
+            let name = caps[2].trim();
+            let name = if name.is_empty() { None } else { Some(name.to_owned()) };
+            Self::Image { owner, name }
         } else {
-            Self::Local(FileLocal { name: s.to_string() })
+            let path = PathBuf::from(s.trim());
+            Self::Local { path }
         };
         Ok(f)
+    }
+}
+
+impl FileArg {
+    pub fn is_local(&self) -> bool {
+        matches!(self, Self::Local { .. })
+    }
+
+    pub fn is_dir(&self) -> bool {
+        match self {
+            Self::Local { path } => path.is_dir(),
+            Self::Image { owner: _, name } => name.is_none(),
+        }
     }
 }
