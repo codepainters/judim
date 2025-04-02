@@ -10,6 +10,8 @@ jobs:
     name: Setup Environment
     runs-on: ubuntu-latest
     steps:
+      - name: check
+        run: which cargo || pwd
       #- name: Install Rust toolchain
       #  uses: dtolnay/rust-toolchain@stable
 
