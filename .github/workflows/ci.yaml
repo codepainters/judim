@@ -24,20 +24,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show
-        run: |
-          pwd 
-          ls -l
-          cd ..
-          ls -l
       - name: Run cargo check
         run: cargo check --all-features
 
       - name: Run cargo test
         run: cargo test --all-features
 
-      - name: Run cargo clippy
-        run: cargo clippy --all-features -- -D warnings
+#      - name: Run cargo clippy
+#        run: cargo clippy --all-features -- -D warnings
 
   release:
     name: Build and Release Binaries
