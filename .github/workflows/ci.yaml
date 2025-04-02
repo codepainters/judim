@@ -2,9 +2,6 @@ name: Rust CI
 
 on:
   push:
-    branches: ["**"]
-    tags:
-      - "v*.*"
   pull_request:
     branches: ["main", "master"]
   
@@ -27,6 +24,12 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
+      - name: Show
+        run: |
+          pwd 
+          ls -l
+          cd ..
+          ls -l
       - name: Run cargo check
         run: cargo check --all-features
 
