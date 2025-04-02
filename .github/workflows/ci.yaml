@@ -10,11 +10,11 @@ jobs:
     name: Setup Environment
     runs-on: ubuntu-latest
     steps:
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      #- name: Install Rust toolchain
+      #  uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo dependencies
-        uses: Swatinem/rust-cache@v2
+      #- name: Cache cargo dependencies
+      #  uses: Swatinem/rust-cache@v2
 
   checks:
     name: Run checks, tests, and linting
