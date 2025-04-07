@@ -56,9 +56,9 @@ jobs:
         run: |
           mkdir -p release
           if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            cp target/${{ matrix.target }}/release/*.exe release/
+            cp -v target/${{ matrix.target }}/release/judim.exe release/
           else
-            cp target/${{ matrix.target }}/release/* release/
+            cp -v target/${{ matrix.target }}/release/judim release/
           fi
 
       - name: Upload release asset
