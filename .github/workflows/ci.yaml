@@ -46,6 +46,9 @@ jobs:
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Build binary
         run: cargo build --release --target ${{ matrix.target }}
 
