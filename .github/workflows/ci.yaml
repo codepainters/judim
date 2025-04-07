@@ -8,7 +8,6 @@ on:
 jobs:
   checks:
     name: Run checks, tests, and linting
-    needs: setup
     runs-on: ubuntu-latest
     steps:
       - name: Install Rust toolchain
