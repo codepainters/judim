@@ -6,25 +6,19 @@ on:
     branches: ["main", "master"]
   
 jobs:
-  setup:
-    name: Setup Environment
-    runs-on: ubuntu-latest
-    steps:
-      - name: check
-        run: which cargo || pwd
-      #- name: Install Rust toolchain
-      #  uses: dtolnay/rust-toolchain@stable
-
-      #- name: Cache cargo dependencies
-      #  uses: Swatinem/rust-cache@v2
-
   checks:
     name: Run checks, tests, and linting
     needs: setup
     runs-on: ubuntu-latest
     steps:
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: Run cargo check
         run: cargo check --all-features
@@ -44,8 +38,14 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc]
     steps:
-      - name: Install target
-        run: rustup target add ${{ matrix.target }}
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: Build binary
         run: cargo build --release --target ${{ matrix.target }}
