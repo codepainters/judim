@@ -10,5 +10,5 @@ Initial release with the following functionality:
 - `dsk` command for Junior (CP/J) disk image operations (`ls`, `get`, `cp`). Only copying from 
    the image is implemented at the moment.
 - `tap` command for ZX Spectrum `.tap` file operations (`info`, `extract`, `explode`)
-- `basic` command stub for BASIC file operations
+- `basic` command stub for BASIC program tooling
 
