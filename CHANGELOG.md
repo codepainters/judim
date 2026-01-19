@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [v0.1] - 2025-01-19
+## [v0.0.1] - 2025-01-19
 
 Initial release with the following functionality:
 - `dsk` command for Junior (CP/J) disk image operations (`ls`, `get`, `cp`). Only copying from 
