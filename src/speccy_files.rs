@@ -1,9 +1,9 @@
-use std::fs::File;
-use std::io::{Cursor, Read};
-use std::fmt;
 use anyhow::{bail, Error};
-use binrw::binrw;
 use binrw::BinReaderExt;
+use binrw::{binrw, BinWriterExt};
+use std::fmt;
+use std::fs::File;
+use std::io::{Cursor, Read, Write};
 
 // References:
 // - https://sinclair.wiki.zxnet.co.uk/wiki/Spectrum_tape_interface
@@ -21,7 +21,19 @@ pub enum SpeccyFileType {
     /// Array of strings
     ChrArray = 2,
     /// Raw memory content
-    Code = 3
+    Code = 3,
+}
+
+impl SpeccyFileType {
+    /// Returns 3-characters extension for the file type, as used by Junior filesystem.
+    pub fn extension(&self) -> &'static str {
+        match self {
+            SpeccyFileType::Program => "prg",
+            SpeccyFileType::NumArray => "arr",
+            SpeccyFileType::ChrArray => "str",
+            SpeccyFileType::Code => "cod",
+        }
+    }
 }
 
 impl fmt::Display for SpeccyFileType {
@@ -34,7 +46,6 @@ impl fmt::Display for SpeccyFileType {
         }
     }
 }
-
 
 /// ZX Spectrum file header
 #[derive(Debug)]
@@ -52,7 +63,9 @@ pub struct SpeccyFileHeader {
 
 impl SpeccyFileHeader {
     pub fn name(&self) -> &[u8] {
-        let end = self.name.iter()
+        let end = self
+            .name
+            .iter()
             .rposition(|&b| b != 0x20)
             .map(|pos| pos + 1)
             .unwrap_or(0);
@@ -61,7 +74,6 @@ impl SpeccyFileHeader {
 }
 
 impl SpeccyFile {
-
     /// Reads a single ZX Spectrum file from a file.
     ///
     /// It expects to see a single ZX Spectrum file header at the start of the file,
@@ -87,14 +99,21 @@ impl SpeccyFile {
             return Ok(None);
         }
         if size_and_flag != *b"\x13\x00\x00" {
-            bail!("Invalid header marker: {}", size_and_flag[0..3].iter().map(|&b| format!("{:02X}", b)).collect::<Vec<String>>()[..].join("70 "));
+            bail!(
+                "Invalid header marker: {}",
+                size_and_flag[0..3]
+                    .iter()
+                    .map(|&b| format!("{:02X}", b))
+                    .collect::<Vec<String>>()[..]
+                    .join("70 ")
+            );
         }
 
         let mut header_bytes = [0u8; 17];
         f.read_exact(&mut header_bytes)?;
         let header_checksum = header_bytes.iter().fold(0u8, |acc, &b| acc ^ b);
         let expected_checksum: u8 = f.read_le()?;
-        if  expected_checksum != header_checksum {
+        if expected_checksum != header_checksum {
             bail!("Header checksum mismatch: {} {}", expected_checksum, header_checksum);
         }
 
@@ -132,6 +151,29 @@ impl SpeccyFile {
         Ok(files)
     }
 
+    pub fn write_header(&self, f: &mut File) -> Result<(), Error> {
+        f.write_le(&self.header())?;
+        Ok(())
+    }
+
+    pub fn write_raw_data(&self, f: &mut File) -> Result<(), Error> {
+        f.write_all(&self.data())?;
+        Ok(())
+    }
+
+    pub fn name(&self) -> String {
+        let raw_name = self.header().name();
+        String::from_utf8_lossy(raw_name).to_string()
+    }
+
+    pub fn file_type(&self) -> SpeccyFileType {
+        self.header().file_type
+    }
+
+    pub fn size(&self) -> usize {
+        self.header().length as usize
+    }
+
     fn from_header_and_data(header: SpeccyFileHeader, data: Vec<u8>) -> Result<SpeccyFile, Error> {
         let f = match header.file_type {
             SpeccyFileType::Program => SpeccyFile::Program(SFProgram::from_header_and_data(header, data)?),
@@ -142,7 +184,7 @@ impl SpeccyFile {
         Ok(f)
     }
 
-    fn read_up_to(f: &mut File, buf :&mut [u8]) -> Result<usize, Error> {
+    fn read_up_to(f: &mut File, buf: &mut [u8]) -> Result<usize, Error> {
         let mut offset = 0;
         while offset < buf.len() {
             let n = f.read(&mut buf[offset..])?;
@@ -154,7 +196,7 @@ impl SpeccyFile {
         Ok(offset)
     }
 
-    fn get_header(&self) -> &SpeccyFileHeader {
+    fn header(&self) -> &SpeccyFileHeader {
         match self {
             SpeccyFile::Program(p) => &p.header,
             SpeccyFile::NumArray(n) => &n.header,
@@ -163,17 +205,13 @@ impl SpeccyFile {
         }
     }
 
-    pub fn name(&self) -> String {
-        let raw_name = self.get_header().name();
-        String::from_utf8_lossy(raw_name).to_string()
-    }
-
-    pub fn file_type(&self) -> SpeccyFileType {
-        self.get_header().file_type
-    }
-
-    pub fn size(&self) -> usize {
-        self.get_header().length as usize
+    fn data(&self) -> &[u8] {
+        match self {
+            SpeccyFile::Program(p) => &p.data,
+            SpeccyFile::NumArray(n) => &n.data,
+            SpeccyFile::StrArray(s) => &s.data,
+            SpeccyFile::Code(c) => &c.data,
+        }
     }
 }
 
@@ -191,15 +229,24 @@ pub struct SFProgram {
 
 impl SFProgram {
     fn from_header_and_data(header: SpeccyFileHeader, data: Vec<u8>) -> Result<Self, Error> {
-        Ok(Self{header, data})
+        Ok(Self { header, data })
     }
 
     pub fn get_autostart_line(&self) -> Option<u16> {
-        if self.header.param1 < 0x4000 { Some(self.header.param1) } else { None }
+        if self.header.param1 < 0x4000 {
+            Some(self.header.param1)
+        } else {
+            None
+        }
     }
 
     pub fn vars_offset(&self) -> u16 {
         self.header.param2
+    }
+
+    pub fn disable_autorun(&mut self) {
+        // Note: I don't like the mutability here, I'd rather mask it at saving time.
+        self.header.param1 = 0x8000;
     }
 }
 
@@ -210,11 +257,7 @@ pub struct SFNumArray {
 
 impl SFNumArray {
     fn from_header_and_data(header: SpeccyFileHeader, data: Vec<u8>) -> Result<Self, Error> {
-        Ok(Self{header, data})
-    }
-
-    pub fn var_name(&self) -> char {
-        ((self.header.param1 >> 8) + 65) as u8 as char
+        Ok(Self { header, data })
     }
 }
 
@@ -225,11 +268,7 @@ pub struct SFStrArray {
 
 impl SFStrArray {
     fn from_header_and_data(header: SpeccyFileHeader, data: Vec<u8>) -> Result<Self, Error> {
-        Ok(Self{header, data})
-    }
-
-    pub fn var_name(&self) -> char {
-        ((self.header.param1 >> 8) + 65) as u8 as char
+        Ok(Self { header, data })
     }
 }
 
@@ -240,7 +279,7 @@ pub struct SFCode {
 
 impl SFCode {
     fn from_header_and_data(header: SpeccyFileHeader, data: Vec<u8>) -> Result<Self, Error> {
-        Ok(Self{header, data})
+        Ok(Self { header, data })
     }
 
     pub fn load_address(&self) -> u16 {
@@ -250,9 +289,9 @@ impl SFCode {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-    use binrw::BinReaderExt;
     use super::{SpeccyFileHeader, SpeccyFileType};
+    use binrw::BinReaderExt;
+    use std::io::Cursor;
 
     #[test]
     fn test_speccy_file_header_parse() {
@@ -264,7 +303,5 @@ mod tests {
         assert_eq!(h.length, 12289);
         assert_eq!(h.param1, 16386);
         assert_eq!(h.param2, 20483);
-
     }
-
 }

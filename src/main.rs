@@ -1,10 +1,10 @@
 mod cmd_basic;
 mod cmd_dsk;
+mod cmd_tap;
 mod cpm;
 mod dsk;
 mod file_arg;
 mod speccy_files;
-mod cmd_tap;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -31,7 +31,6 @@ enum Commands {
     /// TAP file operations
     #[command(about = "TAP file operations")]
     Tap(cmd_tap::TapArgs),
-
 }
 
 fn cli() -> Result<()> {
