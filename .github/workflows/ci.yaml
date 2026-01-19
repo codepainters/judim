@@ -69,9 +69,16 @@ jobs:
           cp target/x86_64-unknown-linux-musl/release/judim release/judim-linux-amd64
           cp target/x86_64-pc-windows-gnu/release/judim.exe release/judim-windows-amd64.exe
 
+      - name: Get changelog entry
+        id: changelog
+        uses: mindsers/changelog-reader-action@v2
+        with:
+          version: ${{ github.ref_name }}
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v1
         with:
+          body: ${{ steps.changelog.outputs.changes }}
           files: |
             release/judim-linux-amd64
             release/judim-windows-amd64.exe
