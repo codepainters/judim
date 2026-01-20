@@ -46,6 +46,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Verify version matches tag
+        run: |
+          CARGO_VERSION="v$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')"
+          if [ "$CARGO_VERSION" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} doesn't match Cargo.toml version $CARGO_VERSION"
+            exit 1
+          fi
+          echo "Version check passed: $CARGO_VERSION"
+
       - name: Install musl tools
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 

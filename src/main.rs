@@ -12,6 +12,7 @@ use std::process::exit;
 
 #[derive(Parser)]
 #[command(name = "judim")]
+#[command(version)]
 #[command(about = "Junior Disk Image Manager", long_about = None)]
 struct Cli {
     #[command(subcommand)]
